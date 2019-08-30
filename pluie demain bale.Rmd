@@ -1,0 +1,117 @@
+---
+title: "Rapport Pluie Bale"
+author: "Pierre Bertrand"
+date: "30 aoÃ»t 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Rapport Pluie à Bâle
+
+## Import des données d'apprentissage
+
+```{r}
+library(MASS)
+Pluie=read.csv("C:\\Users\\pierr\\Desktop\\Statistique et Big Data\\Cours R\\modele lineaire generalisé 1\\DM Pluie Bale\\meteo.train.csv")
+summary(Pluie)
+```
+
+Le fichier Meteo train contient les informations sur les conditions météorologiques à Bâle en Suisse. 
+Nous cherchons à expliquer pluie.demain, puis prédire les lendemains du fichier meteo.test.
+
+Le fichier comporte 47 variables. 
+
+La variable observée, pluie.demain, est une variable binaire {TRUE, FALSE}.
+Nous allons donc utiliser la regression logistique pour modéliser cette variable.
+
+## Choix de modèle
+
+Le nombre de variables est très élevé, et donc il y a un nombre de modèles différents très élevé. Le test de Fisher grace à la fonction anova serait trop long à implémenter au vu du nombre élevé de variables, puisque 47 colonnes = 2^46 modèles différents.
+
+Pour choisir le modèle, nous allons donc utiliser les méthodes pas à pas à l'aide du critère AIC.
+
+### Méthode pas à pas
+
+```{r}
+modele0=glm(pluie.demain~1, data=Pluie, family = binomial)
+modele1=glm(pluie.demain~., data=Pluie, family = binomial)
+summary(modele1)
+```
+
+Le summary du modèle saturé est très difficile à lire et à interpréter, l'analyse de 46 varibles étant complexe. 
+Nous allons donc utiliser la méthode pas à pas, à l'aide de la fonction step qui automatise l'analyse de l'ensemble des modèles possibles.
+Cette méthode cherche à minimiser le critère AIC.
+
+```{r}
+# Méthode progressive
+step(modele0, list(lower=formula(modele0),upper=formula(modele1)), direction="both")
+
+# Méthode ascendante
+step(modele0, list(lower=formula(modele0),upper=formula(modele1)), direction="forward" )
+
+# Méthode descendante
+step(modele1, direction="backward" )
+```
+
+Les deux premières méthodes retournent le même modèle, basé sur des varibles (12) de pression (Max, Min), nuage, vent (direction, vitesse), neige.
+
+La dernière méthode retourne 15 variables, dont 7 en commun avec les deux modèles précédents : pression, nuage, vent, neige, plus des varriables de temperature.
+
+## Modèle linéaire généralisé
+
+### Validation du modèle
+
+On choisit de tester d'abord le modèle obtenu dans les deux premiers cas. Il a l'avantage, en plus dêtre le résultat de deux des trois tests "pas à pas", d'avoir moins de variables explicatives.
+
+```{r}
+modele2=glm(pluie.demain ~ Mean.Sea.Level.Pressure.daily.min..MSL. + Medium.Cloud.Cover.daily.max..mid.cld.lay. + Wind.Direction.daily.mean..900.mb. + High.Cloud.Cover.daily.mean..high.cld.lay. + Mean.Sea.Level.Pressure.daily.max..MSL. + Snowfall.amount.raw.daily.sum..sfc. + Mean.Sea.Level.Pressure.daily.mean..MSL. + Wind.Speed.daily.max..900.mb. + Wind.Speed.daily.mean..80.m.above.gnd. + Wind.Speed.daily.min..10.m.above.gnd. + Wind.Gust.daily.max..sfc. + Total.Cloud.Cover.daily.max..sfc., family = binomial, data = Pluie)
+
+summary(modele2)
+```
+
+
+On note que parmi les 12 variables séléctionnées par la méthode step (progressive et ascendante), seulement 3 variables explicatives sont très significatives (Pr <0.0001) et 4 le sont "un peu" (3 < 0.05 et 1 < 0.1). 
+
+On teste ensuite le résultat obtenu par la méthode descendante.
+
+```{r}
+modele3=glm(formula = pluie.demain ~ Temperature.daily.mean..2.m.above.gnd. + Snowfall.amount.raw.daily.sum..sfc. + Low.Cloud.Cover.daily.mean..low.cld.lay. + Wind.Speed.daily.mean..80.m.above.gnd. + Wind.Speed.daily.mean..900.mb. + Wind.Direction.daily.mean..900.mb. + Temperature.daily.min..2.m.above.gnd. + Mean.Sea.Level.Pressure.daily.max..MSL. + Total.Cloud.Cover.daily.min..sfc. + High.Cloud.Cover.daily.max..high.cld.lay. + Medium.Cloud.Cover.daily.max..mid.cld.lay. + Low.Cloud.Cover.daily.min..low.cld.lay. + Wind.Speed.daily.min..10.m.above.gnd. + Wind.Speed.daily.min..900.mb. + Wind.Gust.daily.max..sfc., family = binomial, data = Pluie)
+
+summary(modele3)
+```
+
+Les résultats sont meilleurs que précédemment, 5 variables sont très significatives, mais seulement 1 ne l'est pas (Snowfall.amount.raw.daily.sum..sfc.). Nous allons donc choisir le modele3 comme régression logistique.
+
+### Prédiction 
+
+```{r}
+Pluie2=read.csv("meteo.test.csv")
+pred = predict(modele3, newdata = Pluie2, type = "response")
+pred2 = (pred >= 0.5)
+table(pred2)
+```
+
+On obtient 118 TRUE et 109 FALSE. Cela correspond à 52% de journée de pluie à Bâle.
+
+```{r}
+summary(Pluie$pluie.demain)
+```
+
+En observant les résultats des données d'apprentissage, nous obtenons 619 TRUE et 625 FALSE, ce qui correspond à environ 49.5%  de journée de pluie. Cette proximité des résultats de répartition de pluie.demain entre les deux fichiers ne signifie pas nécessairement que nos résultats sont corrects mais permet au moins de nous fournir une tendance qui montre surtout qu'il n'y a pas d'aberation.
+
+Par curiosité, nous allons tester le second modele.
+
+```{r}
+pred3 = predict(modele2, newdata = Pluie2, type = "response")
+pred4 = (pred >= 0.5)
+table(pred4)
+```
+
+On obtient 112 TRUE et 115 FALSE, soit 49% de pluie. Le résultat est du même ordre de grandeur que pour le modèle précédent.
+
+Il ne nous reste plus qu'à importer les résultats.
+
+```{r}
+write.csv(pred2, file="resultat.pluie.csv")
+```
